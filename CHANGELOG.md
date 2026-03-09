@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1] - 2026-03-09
+
+### Security
+- Added input validation for channel names and addresses
+- Removed config file reading from handler (privacy improvement)
+- Added proper escaping for shell command injection prevention
+- Added SECURITY.md with detailed security and privacy information
+
+### Changed
+- Handler no longer reads `~/.openclaw/openclaw.json`
+- Simplified notification message (removed model info)
+- Improved error messages in setup script
+
 ## [1.0.0] - 2026-03-09
 
 ### Added

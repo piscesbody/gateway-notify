@@ -14,15 +14,42 @@ CHANNEL=$1
 ADDRESS=$2
 HOOK_DIR="$HOME/.openclaw/hooks/gateway-restart-notify"
 
+# Input validation
+if [[ ! "$CHANNEL" =~ ^[a-z]+$ ]]; then
+  echo "Error: Invalid channel name. Only lowercase letters allowed."
+  exit 1
+fi
+
+# Validate address format based on channel
+case "$CHANNEL" in
+  imessage)
+    if [[ ! "$ADDRESS" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] && [[ ! "$ADDRESS" =~ ^[0-9]+@[a-z]+\.[a-z]+$ ]]; then
+      echo "Error: Invalid email format for iMessage"
+      exit 1
+    fi
+    ;;
+  whatsapp)
+    if [[ ! "$ADDRESS" =~ ^\+[0-9]{10,15}$ ]]; then
+      echo "Error: Invalid phone format for WhatsApp (use +countrycode)"
+      exit 1
+    fi
+    ;;
+  telegram)
+    if [[ ! "$ADDRESS" =~ ^@[a-zA-Z0-9_]{5,32}$ ]] && [[ ! "$ADDRESS" =~ ^[0-9]+$ ]]; then
+      echo "Error: Invalid Telegram username or chat ID"
+      exit 1
+    fi
+    ;;
+esac
+
 echo "Setting up gateway-restart-notify hook..."
 echo "Channel: $CHANNEL"
 echo "Address: $ADDRESS"
 
-# Create hook directory
 mkdir -p "$HOOK_DIR"
 
 # Create HOOK.md
-cat > "$HOOK_DIR/HOOK.md" << 'EOF'
+cat > "$HOOK_DIR/HOOK.md" << 'HOOKEOF'
 ---
 name: gateway-restart-notify
 description: "Send notification when gateway starts"
@@ -35,34 +62,17 @@ metadata:
 # Gateway Restart Notify
 
 Sends notification to user when gateway starts up.
-EOF
+HOOKEOF
 
 echo "✓ Created HOOK.md"
 
-# Determine CLI command based on channel
-case "$CHANNEL" in
-  imessage)
-    CLI_CMD="imsg send --to $ADDRESS --text"
-    ;;
-  whatsapp)
-    CLI_CMD="wacli send --to $ADDRESS --text"
-    ;;
-  telegram|discord|slack)
-    CLI_CMD="openclaw message send --channel $CHANNEL --target $ADDRESS --message"
-    ;;
-  *)
-    echo "Error: Unsupported channel '$CHANNEL'"
-    echo "Supported: imessage, whatsapp, telegram, discord, slack"
-    exit 1
-    ;;
-esac
+# Escape address for safe embedding
+SAFE_ADDRESS=$(printf '%s' "$ADDRESS" | sed "s/'/'\\\\''/g")
 
-# Create handler.ts
-cat > "$HOOK_DIR/handler.ts" << 'HANDLER_EOF'
+# Create handler with validated inputs
+cat > "$HOOK_DIR/handler.ts" << HANDLEREOF
 import { exec } from "child_process";
 import { promisify } from "util";
-import { readFileSync } from "fs";
-import { homedir } from "os";
 
 const execAsync = promisify(exec);
 
@@ -74,20 +84,29 @@ const handler = async (event) => {
   console.log("[gateway-restart-notify] Gateway started, sending notification");
 
   try {
-    const configPath = `${homedir()}/.openclaw/openclaw.json`;
-    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
-    const model = config.agents?.defaults?.model || "unknown";
-    
     const now = new Date();
     const timeStr = now.toLocaleString('en-US', { hour12: false });
     
-    const message = `🚀 Gateway started!
+    const message = \\\`🚀 Gateway started!
 
-⏰ Time: ${timeStr}
-🤖 Model: ${model}
-🌐 Port: 127.0.0.1:18789`;
+⏰ Time: \\\${timeStr}
+🌐 Port: 127.0.0.1:18789\\\`;
 
-    await execAsync(`CLI_COMMAND_PLACEHOLDER "${message}"`);
+
+    // Use validated channel and address
+    const channel = '$CHANNEL';
+    const address = '$SAFE_ADDRESS';
+    
+    let cmd;
+    if (channel === 'imessage') {
+      cmd = `imsg send --to '${address}' --text "${message}"`;
+    } else if (channel === 'whatsapp') {
+      cmd = `wacli send --to '${address}' --text "${message}"`;
+    } else {
+      cmd = `openclaw message send --channel ${channel} --target '${address}' --message "${message}"`;
+    }
+    
+    await execAsync(cmd);
     console.log("[gateway-restart-notify] Notification sent");
   } catch (err) {
     console.error("[gateway-restart-notify] Failed:", err);
@@ -95,14 +114,10 @@ const handler = async (event) => {
 };
 
 export default handler;
-HANDLER_EOF
-
-# Replace placeholder with actual CLI command
-sed -i '' "s|CLI_COMMAND_PLACEHOLDER|$CLI_CMD|g" "$HOOK_DIR/handler.ts"
+HANDLEREOF
 
 echo "✓ Created handler.ts"
 
-# Enable hook
 openclaw hooks enable gateway-restart-notify
 echo "✓ Hook enabled"
 
