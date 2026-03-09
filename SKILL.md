@@ -1,11 +1,11 @@
 ---
 name: gateway-notify
-description: "Set up automatic notifications when OpenAWS gateway restarts. Use when user wants to be notified of gateway startup events via any messaging channel (iMessage, WhatsApp, Telegram, Discord, etc.)."
+description: "Set up automatic notifications when OpenClaw gateway restarts. Use when user wants to be notified of gateway startup events via any messaging channel (iMessage, WhatsApp, Telegram, Discord, etc.)."
 ---
 
 # Gateway Notify
 
-Automatically send notifications when the OpenAWS gateway starts up.
+Automatically send notifications when the OpenClaw gateway starts up.
 
 ## What It Does
 
@@ -29,12 +29,12 @@ scripts/setup_gateway_notify.sh telegram @username
 The script will:
 1. Create the hook directory at `~/.openclaw/hooks/gateway-restart-notify`
 2. Generate the handler with the specified channel configuration
-3. Enable the hook in OpenAWS config
+3. Enable the hook in OpenClaw config
 4. Restart the gateway to activate
 
 ## How It Works
 
-The hook uses OpenAWS's internal hook system:
+The hook uses OpenClaw's internal hook system:
 - Listens for `gateway:startup` events
 - Collects gateway status (model, time, port)
 - Sends notification via the configured channel CLI
