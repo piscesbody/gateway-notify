@@ -1,6 +1,6 @@
 # Gateway Notify - 网关重启通知
 
-当 OpenAWS 网关启动时自动发送通知。
+当 OpenClaw 网关启动时自动发送通知。
 
 ## 功能说明
 
@@ -24,12 +24,12 @@ scripts/setup_gateway_notify.sh telegram @username
 脚本会自动：
 1. 在 `~/.openclaw/hooks/gateway-restart-notify` 创建钩子目录
 2. 生成配置好的处理器代码
-3. 在 OpenAWS 配置中启用钩子
+3. 在 OpenClaw 配置中启用钩子
 4. 重启网关以激活
 
 ## 工作原理
 
-该钩子使用 OpenAWS 内部钩子系统：
+该钩子使用 OpenClaw 内部钩子系统：
 - 监听 `gateway:startup` 事件
 - 收集网关状态（时间、端口）
 - 通过配置的渠道 CLI 发送通知
