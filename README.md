@@ -41,7 +41,7 @@ openclaw skills install gateway-notify.skill
 ## Documentation
 
 - [English Manual](SKILL.md)
-- [中文手册](https://github.com/deemoartisan/gateway-notify/blob/main/gateway-notify使用手册.md)
+- [中文手册](README_zh.md)
 
 ## Supported Channels
 
