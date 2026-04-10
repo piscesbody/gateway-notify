@@ -1,75 +1,107 @@
-# Manual Setup Guide
+# Manual Setup Guide (Hermes)
 
-## Step 1: Create Hook Directory
+This manual explains how to install the restart notification hook directly into **Hermes Agent**.
+
+## Step 1: Create the hook directory
 
 ```bash
-mkdir -p ~/.openclaw/hooks/gateway-restart-notify
+mkdir -p ~/.hermes/hooks/gateway-restart-notify
 ```
 
-## Step 2: Create HOOK.md
+## Step 2: Create `HOOK.yaml`
 
-Create `~/.openclaw/hooks/gateway-restart-notify/HOOK.md`:
+Create `~/.hermes/hooks/gateway-restart-notify/HOOK.yaml`:
 
-```markdown
----
+```yaml
 name: gateway-restart-notify
-description: "Send notification when gateway starts"
-metadata:
-  openclaw:
-    emoji: "🚀"
-    events: ["gateway:startup"]
----
-
-# Gateway Restart Notify
-
-Sends notification to user when gateway starts up.
+description: Send a notification to configured targets when Hermes gateway starts.
+events:
+  - gateway:startup
 ```
 
-## Step 3: Create Handler
+## Step 3: Create `handler.py`
 
-Create `~/.openclaw/hooks/gateway-restart-notify/handler.ts` with your channel-specific command.
+Create `~/.hermes/hooks/gateway-restart-notify/handler.py`.
 
-Example for iMessage:
+This handler should:
 
-```typescript
-import { exec } from "child_process";
-import { promisify } from "util";
+- listen for `gateway:startup`
+- build a restart notification message
+- send it through Hermes `send_message`
+- no-op when notifications are disabled
 
-const execAsync = promisify(exec);
+### Minimal example
 
-const handler = async (event) => {
-  if (event.type !== "gateway" || event.action !== "startup") {
-    return;
-  }
+```python
+import json
+import logging
+import os
+from datetime import datetime
 
-  try {
-    const now = new Date();
-    const timeStr = now.toLocaleString('en-US', { hour12: false });
-    
-    const message = `🚀 Gateway started!
+logger = logging.getLogger("hooks.gateway-restart-notify")
 
-⏰ Time: ${timeStr}
-🌐 Port: 127.0.0.1:18789`;
 
-    await execAsync(`imsg send --to 'YOUR_ADDRESS' --text "${message}"`);
-  } catch (err) {
-    console.error("[gateway-restart-notify] Failed:", err);
-  }
-};
+def _enabled() -> bool:
+    return os.getenv("GATEWAY_NOTIFY_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
 
-export default handler;
+
+async def handle(event_type: str, context: dict) -> None:
+    if event_type != "gateway:startup":
+        return
+    if not _enabled():
+        return
+
+    from tools.send_message_tool import send_message_tool
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    message = (
+        "🚀 Hermes gateway 已重启并恢复在线\n\n"
+        f"⏰ Time: {now}\n"
+        "如果你上一条消息因为重启被打断，直接回复“继续”即可。"
+    )
+
+    raw = send_message_tool({
+        "action": "send",
+        "target": "feishu",
+        "message": message,
+    })
+    logger.info("notify result: %s", raw)
 ```
 
-Replace `YOUR_ADDRESS` and the command with your channel's CLI.
+## Step 4: Configure environment variables
 
-## Step 4: Enable Hook
+Add to `~/.hermes/.env`:
 
 ```bash
-openclaw hooks enable gateway-restart-notify
+GATEWAY_NOTIFY_ENABLED=true
+GATEWAY_NOTIFY_TARGETS=feishu
 ```
 
-## Step 5: Restart Gateway
+You can also target explicit destinations:
 
 ```bash
-openclaw gateway restart
+GATEWAY_NOTIFY_TARGETS=feishu:oc_xxx,telegram:-1001234567890
 ```
+
+## Step 5: Restart Hermes gateway
+
+```bash
+hermes gateway restart
+```
+
+## Optional: custom template
+
+```bash
+GATEWAY_NOTIFY_TEMPLATE=🚀 Hermes restarted at {time}\nModel: {model}\nPlatforms: {platforms}
+```
+
+Supported placeholders:
+
+- `{time}`
+- `{model}`
+- `{platforms}`
+
+## Important limitation
+
+This hook **does not automatically resume** a reply that was interrupted by restart.
+It only notifies the user that Hermes is back online.

@@ -1,46 +1,125 @@
-# Supported Channels
+# Supported Hermes Targets
 
-## iMessage
+This project uses **Hermes target syntax**, not OpenClaw-specific messaging commands.
 
-**CLI**: `imsg`
-**Address format**: Email or phone number (e.g., `user@icloud.com`, `277498782@qq.com`)
-**Command**:
-```bash
-imsg send --to <address> --text "<message>"
+## Target formats
+
+### 1. Platform name only
+
+Use the platform home channel:
+
+```text
+feishu
+telegram
+discord
+slack
 ```
 
-## WhatsApp
+This requires the corresponding home channel to already be configured in Hermes.
 
-**CLI**: `wacli`
-**Address format**: Phone number with country code (e.g., `+1234567890`)
-**Command**:
-```bash
-wacli send --to <address> --text "<message>"
+### 2. Explicit target
+
+Use `platform:chat_id` format:
+
+```text
+feishu:oc_xxx
+telegram:-1001234567890
+discord:123456789012345678
+slack:C1234567890
 ```
 
-## Telegram
+### 3. Telegram topic / thread
 
-**CLI**: `openclaw message`
-**Address format**: Chat ID or username (e.g., `@username`, `123456789`)
-**Command**:
-```bash
-openclaw message send --channel telegram --target <address> --message "<message>"
+```text
+telegram:-1001234567890:17585
 ```
 
-## Discord
+## Recommended Hermes targets
 
-**CLI**: `openclaw message`
-**Address format**: Channel ID (e.g., `1234567890`)
-**Command**:
-```bash
-openclaw message send --channel discord --target <address> --message "<message>"
+### Feishu
+
+If you already use a Feishu home channel:
+
+```text
+feishu
 ```
 
-## Slack
+If you want an explicit Feishu chat:
 
-**CLI**: `openclaw message`
-**Address format**: Channel name or ID (e.g., `#general`, `C1234567890`)
-**Command**:
-```bash
-openclaw message send --channel slack --target <address> --message "<message>"
+```text
+feishu:oc_xxx
 ```
+
+### Telegram
+
+Use home channel:
+
+```text
+telegram
+```
+
+Use explicit chat ID:
+
+```text
+telegram:-1001234567890
+```
+
+Use topic/thread:
+
+```text
+telegram:-1001234567890:17585
+```
+
+### Discord
+
+Use home channel:
+
+```text
+discord
+```
+
+Use explicit channel ID:
+
+```text
+discord:123456789012345678
+```
+
+### Slack
+
+Use home channel:
+
+```text
+slack
+```
+
+Use explicit channel ID:
+
+```text
+slack:C1234567890
+```
+
+## Environment variable example
+
+```bash
+GATEWAY_NOTIFY_ENABLED=true
+GATEWAY_NOTIFY_TARGETS=feishu,telegram
+```
+
+Or:
+
+```bash
+GATEWAY_NOTIFY_ENABLED=true
+GATEWAY_NOTIFY_TARGETS=feishu:oc_xxx
+```
+
+## Important note
+
+This project sends notifications through **Hermes delivery paths**.
+
+It does not depend on:
+
+- `openclaw message`
+- `imsg`
+- `wacli`
+
+unless you intentionally build a custom Hermes hook that shells out to those tools yourself.

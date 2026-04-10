@@ -1,75 +1,112 @@
-# 手动设置指南
+# 手动安装指南（Hermes）
 
-## 步骤 1：创建钩子目录
+本手册说明如何把“网关重启通知”Hook 手动安装到 **Hermes Agent** 中。
+
+## 步骤 1：创建 Hook 目录
 
 ```bash
-mkdir -p ~/.openclaw/hooks/gateway-restart-notify
+mkdir -p ~/.hermes/hooks/gateway-restart-notify
 ```
 
-## 步骤 2：创建 HOOK.md
+## 步骤 2：创建 `HOOK.yaml`
 
-创建 `~/.openclaw/hooks/gateway-restart-notify/HOOK.md`：
+在 `~/.hermes/hooks/gateway-restart-notify/HOOK.yaml` 中写入：
 
-```markdown
----
+```yaml
 name: gateway-restart-notify
-description: "网关启动时发送通知"
-metadata:
-  openclaw:
-    emoji: "🚀"
-    events: ["gateway:startup"]
----
-
-# Gateway Restart Notify
-
-网关启动时向用户发送通知。
+description: Send a notification to configured targets when Hermes gateway starts.
+events:
+  - gateway:startup
 ```
 
-## 步骤 3：创建处理器
+## 步骤 3：创建 `handler.py`
 
-创建 `~/.openclaw/hooks/gateway-restart-notify/handler.ts`，使用你的渠道专用命令。
+在 `~/.hermes/hooks/gateway-restart-notify/handler.py` 中实现逻辑。
 
-iMessage 示例：
+这个处理器应该：
 
-```typescript
-import { exec } from "child_process";
-import { promisify } from "util";
+- 监听 `gateway:startup`
+- 生成启动通知消息
+- 使用 Hermes 的 `send_message` 路径发送消息
+- 在未启用时安静退出
 
-const execAsync = promisify(exec);
+### 最小示例
 
-const handler = async (event) => {
-  if (event.type !== "gateway" || event.action !== "startup") {
-    return;
-  }
+```python
+import logging
+import os
+from datetime import datetime
 
-  try {
-    const now = new Date();
-    const timeStr = now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
-    
-    const message = `🚀 网关已启动！
+logger = logging.getLogger("hooks.gateway-restart-notify")
 
-⏰ 时间: ${timeStr}
-🌐 端口: 127.0.0.1:18789`;
 
-    await execAsync(`imsg send --to '你的地址' --text "${message}"`);
-  } catch (err) {
-    console.error("[gateway-restart-notify] 失败:", err);
-  }
-};
+def _enabled() -> bool:
+    return os.getenv("GATEWAY_NOTIFY_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
 
-export default handler;
+
+async def handle(event_type: str, context: dict) -> None:
+    if event_type != "gateway:startup":
+        return
+    if not _enabled():
+        return
+
+    from tools.send_message_tool import send_message_tool
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    message = (
+        "🚀 Hermes gateway 已重启并恢复在线\n\n"
+        f"⏰ Time: {now}\n"
+        "如果你上一条消息因为重启被打断，直接回复“继续”即可。"
+    )
+
+    raw = send_message_tool({
+        "action": "send",
+        "target": "feishu",
+        "message": message,
+    })
+    logger.info("notify result: %s", raw)
 ```
 
-将 `你的地址` 和命令替换为你的渠道 CLI。
+## 步骤 4：配置环境变量
 
-## 步骤 4：启用钩子
+在 `~/.hermes/.env` 中加入：
 
 ```bash
-openclaw hooks enable gateway-restart-notify
+GATEWAY_NOTIFY_ENABLED=true
+GATEWAY_NOTIFY_TARGETS=feishu
 ```
 
-## 步骤 5：重启网关
+也可以写明确目标：
 
 ```bash
-openclaw gateway restart
+GATEWAY_NOTIFY_TARGETS=feishu:oc_xxx,telegram:-1001234567890
 ```
+
+## 步骤 5：重启 Hermes gateway
+
+```bash
+hermes gateway restart
+```
+
+## 可选：自定义模板
+
+```bash
+GATEWAY_NOTIFY_TEMPLATE=🚀 Hermes 已重启\n时间：{time}\n模型：{model}\n平台：{platforms}
+```
+
+支持占位符：
+
+- `{time}`
+- `{model}`
+- `{platforms}`
+
+## 重要限制
+
+这个 Hook **不会自动恢复** 被重启打断的那条回复。
+
+它解决的是：
+- 重启后无提示
+- 用户不知道 Hermes 是否恢复在线
+
+它不能解决的是：
+- 自动接着发完被中断的回复

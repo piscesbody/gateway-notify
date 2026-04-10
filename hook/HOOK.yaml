@@ -1,0 +1,4 @@
+name: gateway-restart-notify
+description: Send a notification to configured targets when Hermes gateway starts.
+events:
+  - gateway:startup

@@ -1,126 +1,139 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-if [ $# -lt 2 ]; then
-  echo "Usage: $0 <channel> <address>"
-  echo "Examples:"
-  echo "  $0 imessage user@example.com"
-  echo "  $0 whatsapp +1234567890"
-  echo "  $0 telegram @username"
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd)
+HOOK_SRC_DIR="$REPO_ROOT/hook"
+HOOK_DST_DIR="$HOME/.hermes/hooks/gateway-restart-notify"
+ENV_FILE="$HOME/.hermes/.env"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/setup_gateway_notify.sh <target>
+  scripts/setup_gateway_notify.sh <platform> <chat_id>
+  scripts/setup_gateway_notify.sh <target> --restart
+
+Examples:
+  scripts/setup_gateway_notify.sh feishu
+  scripts/setup_gateway_notify.sh telegram
+  scripts/setup_gateway_notify.sh feishu oc_xxx
+  scripts/setup_gateway_notify.sh telegram -1001234567890
+  scripts/setup_gateway_notify.sh feishu:oc_xxx --restart
+
+Target format:
+  platform             -> use Hermes home channel for that platform
+  platform:chat_id     -> use explicit destination
+  telegram:chat:thread -> Telegram topic/thread target
+EOF
+}
+
+if [[ $# -lt 1 ]]; then
+  usage
   exit 1
 fi
 
-CHANNEL=$1
-ADDRESS=$2
-HOOK_DIR="$HOME/.openclaw/hooks/gateway-restart-notify"
+RESTART_AFTER=false
+ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --restart)
+      RESTART_AFTER=true
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      ARGS+=("$arg")
+      ;;
+  esac
+done
 
-# Input validation
-if [[ ! "$CHANNEL" =~ ^[a-z]+$ ]]; then
-  echo "Error: Invalid channel name. Only lowercase letters allowed."
+if [[ ${#ARGS[@]} -eq 0 || ${#ARGS[@]} -gt 2 ]]; then
+  usage
   exit 1
 fi
 
-# Validate address format based on channel
-case "$CHANNEL" in
-  imessage)
-    if [[ ! "$ADDRESS" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] && [[ ! "$ADDRESS" =~ ^[0-9]+@[a-z]+\.[a-z]+$ ]]; then
-      echo "Error: Invalid email format for iMessage"
-      exit 1
-    fi
-    ;;
-  whatsapp)
-    if [[ ! "$ADDRESS" =~ ^\+[0-9]{10,15}$ ]]; then
-      echo "Error: Invalid phone format for WhatsApp (use +countrycode)"
-      exit 1
-    fi
-    ;;
-  telegram)
-    if [[ ! "$ADDRESS" =~ ^@[a-zA-Z0-9_]{5,32}$ ]] && [[ ! "$ADDRESS" =~ ^[0-9]+$ ]]; then
-      echo "Error: Invalid Telegram username or chat ID"
-      exit 1
-    fi
-    ;;
-esac
+if [[ ${#ARGS[@]} -eq 1 ]]; then
+  TARGET="${ARGS[0]}"
+else
+  PLATFORM="${ARGS[0]}"
+  CHAT_ID="${ARGS[1]}"
+  if [[ "$PLATFORM" == *:* ]]; then
+    echo "Error: first argument should be a platform name when passing two arguments."
+    exit 1
+  fi
+  TARGET="${PLATFORM}:${CHAT_ID}"
+fi
 
-echo "Setting up gateway-restart-notify hook..."
-echo "Channel: $CHANNEL"
-echo "Address: $ADDRESS"
+if [[ ! -f "$HOOK_SRC_DIR/HOOK.yaml" || ! -f "$HOOK_SRC_DIR/handler.py" ]]; then
+  echo "Error: hook source files not found in $HOOK_SRC_DIR"
+  exit 1
+fi
 
-mkdir -p "$HOOK_DIR"
+validate_target() {
+  local target="$1"
+  if [[ "$target" =~ ^[a-z]+$ ]]; then
+    return 0
+  fi
+  if [[ "$target" =~ ^[a-z]+:.+$ ]]; then
+    return 0
+  fi
+  return 1
+}
 
-# Create HOOK.md
-cat > "$HOOK_DIR/HOOK.md" << 'HOOKEOF'
----
-name: gateway-restart-notify
-description: "Send notification when gateway starts"
-metadata:
-  openclaw:
-    emoji: "🚀"
-    events: ["gateway:startup"]
----
+if ! validate_target "$TARGET"; then
+  echo "Error: invalid target: $TARGET"
+  echo "Expected platform or platform:chat_id"
+  exit 1
+fi
 
-# Gateway Restart Notify
+mkdir -p "$HOOK_DST_DIR"
+cp "$HOOK_SRC_DIR/HOOK.yaml" "$HOOK_DST_DIR/HOOK.yaml"
+cp "$HOOK_SRC_DIR/handler.py" "$HOOK_DST_DIR/handler.py"
 
-Sends notification to user when gateway starts up.
-HOOKEOF
+mkdir -p "$(dirname "$ENV_FILE")"
+touch "$ENV_FILE"
 
-echo "✓ Created HOOK.md"
+upsert_env() {
+  local key="$1"
+  local value="$2"
+  python3 - <<PY
+from pathlib import Path
+path = Path(r'''$ENV_FILE''')
+key = "$1"
+value = "$2"
+text = path.read_text(encoding='utf-8') if path.exists() else ''
+lines = text.splitlines()
+found = False
+new_lines = []
+for line in lines:
+    stripped = line.strip()
+    if stripped.startswith(f"{key}=") or stripped.startswith(f"# {key}="):
+        new_lines.append(f"{key}={value}")
+        found = True
+    else:
+        new_lines.append(line)
+if not found:
+    if new_lines and new_lines[-1].strip() != '':
+        new_lines.append('')
+    new_lines.append(f"{key}={value}")
+path.write_text("\n".join(new_lines) + "\n", encoding='utf-8')
+PY
+}
 
-# Escape address for safe embedding (cross-platform)
-SAFE_ADDRESS=$(printf '%s' "$ADDRESS" | awk '{gsub(/'\''/, "'\''\\'\'''\''"); print}')
+upsert_env GATEWAY_NOTIFY_ENABLED true
+upsert_env GATEWAY_NOTIFY_TARGETS "$TARGET"
 
-# Create handler with validated inputs
-cat > "$HOOK_DIR/handler.ts" << HANDLEREOF
-import { exec } from "child_process";
-import { promisify } from "util";
+echo "✓ Installed Hermes hook to: $HOOK_DST_DIR"
+echo "✓ Enabled restart notifications"
+echo "✓ Target: $TARGET"
 
-const execAsync = promisify(exec);
-
-const handler = async (event) => {
-  if (event.type !== "gateway" || event.action !== "startup") {
-    return;
-  }
-
-  console.log("[gateway-restart-notify] Gateway started, sending notification");
-
-  try {
-    const now = new Date();
-    const timeStr = now.toLocaleString('en-US', { hour12: false });
-    
-    const message = \`🚀 Gateway started!
-
-⏰ Time: \${timeStr}
-🌐 Port: 127.0.0.1:18789\`;
-
-
-    // Use validated channel and address
-    const channel = '$CHANNEL';
-    const address = '$SAFE_ADDRESS';
-    
-    let cmd;
-    if (channel === 'imessage') {
-      cmd = \`imsg send --to '\${address}' --text "\${message}"\`;
-    } else if (channel === 'whatsapp') {
-      cmd = \`wacli send --to '\${address}' --text "\${message}"\`;
-    } else {
-      cmd = \`openclaw message send --channel \${channel} --target '\${address}' --message "\${message}"\`;
-    }
-    
-    await execAsync(cmd);
-    console.log("[gateway-restart-notify] Notification sent");
-  } catch (err) {
-    console.error("[gateway-restart-notify] Failed:", err);
-  }
-};
-
-export default handler;
-HANDLEREOF
-
-echo "✓ Created handler.ts"
-
-openclaw hooks enable gateway-restart-notify
-echo "✓ Hook enabled"
-
-echo ""
-echo "Setup complete! Restart gateway to test:"
-echo "  openclaw gateway restart"
+echo
+if [[ "$RESTART_AFTER" == true ]]; then
+  echo "Restarting Hermes gateway..."
+  hermes gateway restart
+else
+  echo "Next step: run 'hermes gateway restart' to activate the hook."
+fi

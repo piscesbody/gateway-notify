@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0] - 2026-04-10
+
+### Changed
+- Repositioned the project as a **Hermes Agent** fork instead of an OpenClaw-only project
+- Rewrote README and Chinese README for Hermes terminology and workflow
+- Rewrote SKILL.md for Hermes-native usage
+- Rewrote MANUAL.md and MANUAL_zh.md for Hermes hook installation
+- Rewrote CHANNELS.md around Hermes target syntax and home-channel routing
+- Replaced the installer script with a Hermes-compatible hook installer
+
+### Added
+- Added Hermes-native hook assets: `hook/HOOK.yaml` and `hook/handler.py`
+- Added Hermes environment variable configuration examples
+- Added explicit explanation that this project solves restart notification, not automatic reply resumption
+
+### Removed
+- Removed misleading OpenClaw-specific setup flow from docs
+- Removed OpenClaw-specific packaged `.skill` artifact from the Hermes fork
+
 ## [1.0.5] - 2026-03-09
 
 ### Fixed
@@ -40,9 +59,3 @@ All notable changes to this project will be documented in this file.
 - One-command setup script
 - Complete English and Chinese documentation
 - Gateway status display (model, time, port)
-
-### Features
-- Event-driven hook system using `gateway:startup`
-- Automatic configuration and hook enablement
-- Cross-platform channel support
-- Detailed troubleshooting guide
